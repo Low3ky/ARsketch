@@ -14,21 +14,29 @@
     <div id="overlay">
       <img id="img" alt="" hidden>
     </div>
-    <p id="msg">사진을 불러오세요</p>
+    <p id="msg">img change 버튼으로 사진을 불러오세요</p>
   </main>
 
   <section id="panel">
     <div class="row">
-      <label class="btn primary" for="file">사진 불러오기</label>
+      <button id="flipX" class="ibtn" type="button" aria-label="좌우 반전">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="2,5 11,12 2,19"/><polygon points="22,5 13,12 22,19"/></svg>
+      </button>
+      <button id="flipY" class="ibtn" type="button" aria-label="상하 반전">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="5,2 19,2 12,11"/><polygon points="5,22 19,22 12,13"/></svg>
+      </button>
+      <button id="lock" class="ibtn" type="button" aria-label="화면 잠금" aria-pressed="false">
+        <svg id="iconUnlocked" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="11" width="16" height="11" rx="2.5"/><path class="shackle" d="M8 11V8a4 4 0 0 1 7.6-1.7"/></svg>
+        <svg id="iconLocked" viewBox="0 0 24 24" aria-hidden="true" hidden><rect x="4" y="11" width="16" height="11" rx="2.5"/><path class="shackle" d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+      </button>
+      <button id="lineart" class="pill" type="button">to lineart</button>
+      <button id="change" class="pill" type="button">img change</button>
       <input id="file" type="file" accept="image/*" hidden>
-      <button id="flipX" class="btn" type="button">좌우 반전</button>
-      <button id="flipY" class="btn" type="button">상하 반전</button>
     </div>
     <div class="row">
-      <span class="label">투명도</span>
-      <input id="opacity" type="range" min="5" max="100" value="50">
-      <span id="opacityVal" class="value">50%</span>
-      <button id="lock" class="btn" type="button" aria-pressed="false">잠금 해제됨</button>
+      <input id="opacity" type="range" min="0" max="100" value="70" aria-label="투명도">
+      <button id="opacityVal" class="value" type="button" aria-label="투명도 직접 입력">70%</button>
+      <input id="opacityInput" class="value-input" type="text" inputmode="numeric" maxlength="3" enterkeyhint="done" hidden>
     </div>
   </section>
 
@@ -40,10 +48,17 @@
       var msg = document.getElementById('msg');
       var fileInput = document.getElementById('file');
       var opacity = document.getElementById('opacity');
-      var opacityVal = document.getElementById('opacityVal');
+      var valBtn = document.getElementById('opacityVal');
+      var valInput = document.getElementById('opacityInput');
       var lockBtn = document.getElementById('lock');
+      var iconLocked = document.getElementById('iconLocked');
+      var iconUnlocked = document.getElementById('iconUnlocked');
 
       var state = { x: 0, y: 0, scale: 1, rot: 0, fx: 1, fy: 1, locked: false };
+      var original = null;    // 원본 Image 객체
+      var originalUrl = null;
+      var lineUrl = null;
+      var lineOn = false;
 
       function apply() {
         img.style.transform =
@@ -52,10 +67,20 @@
           'scale(' + (state.scale * state.fx) + ',' + (state.scale * state.fy) + ')';
       }
 
-      // 카메라 (후면)
+      // 버튼을 누르면 잠깐 파란색
+      function flash(btn) {
+        btn.classList.add('flash');
+        setTimeout(function () { btn.classList.remove('flash'); }, 250);
+      }
+      Array.prototype.forEach.call(document.querySelectorAll('.ibtn, .pill'), function (b) {
+        b.addEventListener('pointerdown', function () { flash(b); });
+      });
+
+      // 후면 카메라
       function startCamera() {
         if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          msg.textContent = '이 브라우저는 카메라를 지원하지 않아요 (HTTPS 필요)';
+          msg.hidden = false;
+          msg.textContent = '카메라를 사용할 수 없어요 (HTTPS 필요)';
           return;
         }
         navigator.mediaDevices.getUserMedia({
@@ -64,25 +89,43 @@
         }).then(function (stream) {
           cam.srcObject = stream;
         }).catch(function () {
+          msg.hidden = false;
           msg.textContent = '카메라 권한을 허용해 주세요';
         });
       }
       startCamera();
 
-      // 사진 불러오기
+      // 이미지 바꾸기
+      document.getElementById('change').addEventListener('click', function () {
+        fileInput.click();
+      });
+
       fileInput.addEventListener('change', function () {
         var f = fileInput.files && fileInput.files[0];
         if (!f) return;
-        if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
         var url = URL.createObjectURL(f);
-        img.dataset.url = url;
-        img.onload = function () {
+        var im = new Image();
+        im.onload = function () {
+          if (originalUrl) URL.revokeObjectURL(originalUrl);
+          if (lineUrl) { URL.revokeObjectURL(lineUrl); lineUrl = null; }
+          original = im;
+          originalUrl = url;
+          lineOn = false;
+
+          // 화면의 80% 안에 들어오도록 초기 크기 설정
+          var sw = stage.clientWidth, sh = stage.clientHeight;
+          var fit = Math.min(sw * 0.8 / im.naturalWidth, sh * 0.8 / im.naturalHeight);
+          img.style.width = Math.round(im.naturalWidth * fit) + 'px';
+          img.style.height = 'auto';
+
+          img.src = url;
           img.hidden = false;
           msg.hidden = true;
           state.x = 0; state.y = 0; state.scale = 1; state.rot = 0;
           apply();
         };
-        img.src = url;
+        im.onerror = function () { URL.revokeObjectURL(url); };
+        im.src = url;
         fileInput.value = '';
       });
 
@@ -94,25 +137,146 @@
         state.fy *= -1; apply();
       });
 
-      // 투명도
-      function setOpacity() {
-        img.style.opacity = opacity.value / 100;
-        opacityVal.textContent = opacity.value + '%';
-      }
-      opacity.addEventListener('input', setOpacity);
-      setOpacity();
-
       // 잠금
       lockBtn.addEventListener('click', function () {
         state.locked = !state.locked;
-        lockBtn.textContent = state.locked ? '잠금됨' : '잠금 해제됨';
         lockBtn.setAttribute('aria-pressed', state.locked);
-        lockBtn.classList.toggle('active', state.locked);
-        stage.classList.toggle('locked', state.locked);
+        iconLocked.hidden = !state.locked;
+        iconUnlocked.hidden = state.locked;
         pointers.clear();
+        last = null;
       });
 
-      // 제스처: 한 손가락 이동, 두 손가락 확대/회전
+      // 투명도
+      function setOpacity(v) {
+        v = Math.max(0, Math.min(100, Math.round(v)));
+        opacity.value = v;
+        img.style.opacity = v / 100;
+        valBtn.textContent = v + '%';
+      }
+      opacity.addEventListener('input', function () { setOpacity(Number(opacity.value)); });
+      setOpacity(Number(opacity.value));
+
+      // 퍼센트 글자를 누르면 직접 입력
+      valBtn.addEventListener('click', function () {
+        valBtn.hidden = true;
+        valInput.hidden = false;
+        valInput.value = opacity.value;
+        valInput.focus();
+        valInput.select();
+      });
+      valInput.addEventListener('input', function () {
+        valInput.value = valInput.value.replace(/[^0-9]/g, '');
+      });
+      function commitValue() {
+        var n = parseInt(valInput.value, 10);
+        if (!isNaN(n)) setOpacity(n);
+        valInput.hidden = true;
+        valBtn.hidden = false;
+      }
+      valInput.addEventListener('blur', commitValue);
+      valInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') valInput.blur();
+      });
+      document.addEventListener('pointerdown', function (e) {
+        if (!valInput.hidden && e.target !== valInput) valInput.blur();
+      });
+
+      // ---- 선화 변환 ----
+      function boxBlur(src, w, h, r) {
+        var tmp = new Float32Array(w * h);
+        var out = new Float32Array(w * h);
+        var d = 2 * r + 1, x, y, i, sum, row;
+        for (y = 0; y < h; y++) {
+          row = y * w; sum = 0;
+          for (i = -r; i <= r; i++) sum += src[row + Math.min(w - 1, Math.max(0, i))];
+          tmp[row] = sum / d;
+          for (x = 1; x < w; x++) {
+            sum += src[row + Math.min(w - 1, x + r)] - src[row + Math.max(0, x - r - 1)];
+            tmp[row + x] = sum / d;
+          }
+        }
+        for (x = 0; x < w; x++) {
+          sum = 0;
+          for (i = -r; i <= r; i++) sum += tmp[Math.min(h - 1, Math.max(0, i)) * w + x];
+          out[x] = sum / d;
+          for (y = 1; y < h; y++) {
+            sum += tmp[Math.min(h - 1, y + r) * w + x] - tmp[Math.max(0, y - r - 1) * w + x];
+            out[y * w + x] = sum / d;
+          }
+        }
+        return out;
+      }
+
+      // 연필 스케치(color dodge) 방식. 흰 배경은 투명하게 만들어 카메라 화면 위에 선만 보이게 함.
+      function makeLineart(done) {
+        var maxSide = 1200;
+        var s = Math.min(1, maxSide / Math.max(original.naturalWidth, original.naturalHeight));
+        var w = Math.max(1, Math.round(original.naturalWidth * s));
+        var h = Math.max(1, Math.round(original.naturalHeight * s));
+
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        var ctx = c.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(original, 0, 0, w, h);
+
+        var data = ctx.getImageData(0, 0, w, h);
+        var px = data.data;
+        var n = w * h, i;
+        var gray = new Float32Array(n);
+        var inv = new Float32Array(n);
+        for (i = 0; i < n; i++) {
+          var g = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
+          gray[i] = g;
+          inv[i] = 255 - g;
+        }
+
+        var r = Math.max(2, Math.round(Math.max(w, h) / 150));
+        var b = boxBlur(inv, w, h, r);
+        b = boxBlur(b, w, h, r);
+        b = boxBlur(b, w, h, r);
+
+        for (i = 0; i < n; i++) {
+          var res = b[i] >= 254.5 ? 255 : Math.min(255, gray[i] * 255 / (255 - b[i]));
+          var line = 255 - res;
+          var a = Math.min(255, Math.max(0, (line - 6) * 2.6));
+          px[i * 4] = 25;
+          px[i * 4 + 1] = 25;
+          px[i * 4 + 2] = 25;
+          px[i * 4 + 3] = a;
+        }
+        ctx.putImageData(data, 0, 0);
+        c.toBlob(function (blob) { done(blob ? URL.createObjectURL(blob) : null); }, 'image/png');
+      }
+
+      var busy = false;
+      document.getElementById('lineart').addEventListener('click', function () {
+        if (!original || busy) return;
+        if (lineOn) {
+          img.src = originalUrl;
+          lineOn = false;
+          return;
+        }
+        if (lineUrl) {
+          img.src = lineUrl;
+          lineOn = true;
+          return;
+        }
+        busy = true;
+        setTimeout(function () {
+          makeLineart(function (url) {
+            busy = false;
+            if (!url) return;
+            lineUrl = url;
+            img.src = url;
+            lineOn = true;
+          });
+        }, 30);
+      });
+
+      // ---- 제스처: 한 손가락 이동, 두 손가락 확대/회전 ----
       var pointers = new Map();
       var last = null;
 
